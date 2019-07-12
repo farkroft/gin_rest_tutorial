@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jinzhu/gorm"
@@ -42,16 +43,19 @@ type Customer struct {
 	FirstName string  `json:"first_name" gorm:"column:first_name;type:varchar(100)"`
 	LastName  string  `json:"last_name" gorm:"column:last_name;type:varchar(100)"`
 	Users     []*User `gorm:"many2many:user_customers"`
-	// UserID    uint    `json:UserID`
+	UserID    uint    `json:"UserID"`
 }
 
 // UserCustomer struct
 type UserCustomer struct {
-	ID         uint     `gorm:"primary_key"`
-	CustomerID uint     `sql:"type:int REFERENCES Customers(id)"`
-	Customer   Customer `gorm:"foreignkey:CustomerID"`
-	UserID     uint     `sql:"type:int REFERENCES Users(id)"`
-	User       User     `gorm:"foreignkey:UserID"`
+	ID         uint      `gorm:"primary_key"`
+	CustomerID uint      `sql:"type:int REFERENCES Customers(id)"`
+	Customer   Customer  `gorm:"foreignkey:CustomerID"`
+	UserID     uint      `sql:"type:int REFERENCES Users(id)"`
+	User       User      `gorm:"foreignkey:UserID"`
+	CreatedAt  time.Time `json:"CreatedAt"`
+	UpdatedAt  time.Time `json:"UpdatedAt"`
+	DeletedAt  time.Time `json:"DeletedAt"`
 }
 
 func main() {
@@ -75,9 +79,6 @@ func main() {
 
 	db.Debug().AutoMigrate(&User{}, &Product{}, &Customer{}, &UserCustomer{})
 	db.Model(&Product{}).AddForeignKey("user_id", "users(id)", "RESTRICT", "CASCADE")
-	// db.Table("users_customers").AddIndex("ID", "id")
-	// db.Table("users_customers").AddForeignKey("user_id", "users(id)", "RESTRICT", "CASCADE")
-	// db.Table("users_customers").AddForeignKey("customer_id", "customers(id)", "RESTRICT", "CASCADE")
 	db.Model(&UserCustomer{}).AddForeignKey("user_id", "users(id)", "RESTRICT", "CASCADE")
 	db.Model(&UserCustomer{}).AddForeignKey("customer_id", "customers(id)", "RESTRICT", "CASCADE")
 	defer db.Close()
@@ -104,6 +105,8 @@ func main() {
 	r.POST("/customer", CreateCustomer)
 	r.PUT("/customer/:id", UpdateCustomer)
 	r.DELETE("/customer/:id", DeleteCustomer)
+
+	// r.POST("/customer/user/:id", CreateUserCustomer)
 
 	r.Run(":8080")
 }
@@ -191,8 +194,9 @@ func DeleteUser(c *gin.Context) {
 // GetAllProducts func to run when root page accessed
 func GetAllProducts(c *gin.Context) {
 	var products []Product
-	Product := db.Debug().Preload("User").Find(&products)
-	if err := db.Debug().Preload("User").Find(&products).Error; err != nil {
+	Product := db.Find(&products)
+	// Product := db.Debug().Preload("User").Find(&products) // to load relation
+	if err := Product.Error; err != nil {
 		// if err := db.Find(&products).Error; err != nil {
 		c.AbortWithStatus(404)
 		fmt.Println(err)
@@ -281,14 +285,18 @@ func GetCustomer(c *gin.Context) {
 // CreateCustomer to create new users
 func CreateCustomer(c *gin.Context) {
 	var customers Customer
-	var users User
-	// users := db.Where("id = ?", customers.UserID).First
 
 	c.BindJSON(&customers)
-
 	db.Create(&customers)
-	db.Model(&users).Association("Customers").Append(customers.ID)
-	// db.Table("users_customers").Create()
+
+	fmt.Println("CustomerID ", customers.ID)
+	if customers.UserID > 0 {
+		db.Create(&UserCustomer{
+			CustomerID: customers.ID,
+			UserID:     customers.UserID,
+		})
+	}
+
 	c.JSON(200, customers)
 }
 
@@ -303,6 +311,12 @@ func UpdateCustomer(c *gin.Context) {
 	}
 	c.BindJSON(&customers)
 	db.Save(&customers)
+	if customers.UserID > 0 {
+		db.Create(&UserCustomer{
+			CustomerID: customers.ID,
+			UserID:     customers.UserID,
+		})
+	}
 	c.JSON(200, customers)
 }
 
